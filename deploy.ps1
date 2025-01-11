@@ -16,6 +16,10 @@ if (-not (Test-Path "dist")) {
     exit 1
 }
 
+# Criar arquivo 404.html
+Write-Host "📝 Criando arquivo 404.html..." -ForegroundColor Yellow
+Copy-Item -Path "dist/index.html" -Destination "dist/404.html"
+
 # Mudar para o branch gh-pages
 Write-Host "🔄 Mudando para branch gh-pages..." -ForegroundColor Yellow
 git checkout gh-pages
@@ -25,12 +29,15 @@ if ($LASTEXITCODE -ne 0) {
 
 # Limpar arquivos antigos
 Write-Host "🧹 Limpando arquivos antigos..." -ForegroundColor Yellow
-Remove-Item -Path "assets" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "index.html" -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path . -Exclude .git,node_modules,dist | Remove-Item -Recurse -Force
 
 # Copiar arquivos do build
 Write-Host "📋 Copiando arquivos do build..." -ForegroundColor Yellow
 Copy-Item -Path "dist/*" -Destination "." -Recurse -Force
+
+# Criar arquivo .nojekyll
+Write-Host "📝 Criando arquivo .nojekyll..." -ForegroundColor Yellow
+New-Item -ItemType File -Path ".nojekyll" -Force
 
 # Adicionar alterações ao git
 Write-Host "📝 Adicionando alterações ao git..." -ForegroundColor Yellow

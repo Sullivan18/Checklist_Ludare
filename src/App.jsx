@@ -1,73 +1,64 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import ChecklistBase from './components/ChecklistBase';
+import DashboardSummary from './components/DashboardSummary';
+import LudareLogo from './components/LudareLogo';
+import { checklists } from './data/checklists';
 import './App.css';
 
-// Importando as páginas
-import TvResenha from './pages/TvResenha';
-import CriacaoConta from './pages/CriacaoConta';
-import Descobrir from './pages/Descobrir';
-import Eventos from './pages/Eventos';
-import Login from './pages/Login';
-import Notificacao from './pages/Notificacao';
-import Resenha from './pages/Resenha';
-import Perfil from './pages/Perfil';
-import FlashDare from './pages/FlashDare';
-import Feed from './pages/Feed';
-
-function NavLink({ to, children }) {
-  const location = useLocation();
-  const isActive = location.pathname === to;
-  return (
-    <Link to={to} className={`nav-link ${isActive ? 'active' : ''}`}>
-      {children}
-    </Link>
-  );
-}
+// Função para converter título em slug
+const createSlug = (text) => {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+};
 
 function App() {
   return (
-    <Router basename="/Checklist_Ludare">
+    <Router>
       <div className="app-container">
+        <Toaster position="top-right" />
         <nav className="sidebar">
           <div className="sidebar-header">
-            <h1>Checklist Ludare</h1>
-          </div>
-          
-          <div className="nav-section">
-            <h2 className="nav-section-title">Principal</h2>
-            <NavLink to="/feed">📱 Feed</NavLink>
-            <NavLink to="/tv-resenha">📺 TV Resenha</NavLink>
-            <NavLink to="/flash-dare">📸 Flash Dare</NavLink>
+            <LudareLogo />
+            <h1>Checklist</h1>
           </div>
 
           <div className="nav-section">
-            <h2 className="nav-section-title">Social</h2>
-            <NavLink to="/resenha">💬 Resenha</NavLink>
-            <NavLink to="/descobrir">🔍 Descobrir</NavLink>
-            <NavLink to="/eventos">📅 Eventos</NavLink>
+            <h2 className="nav-section-title">Geral</h2>
+            <NavLink to="/dashboard" className="nav-link">
+              📊 Resumo Geral
+            </NavLink>
           </div>
 
           <div className="nav-section">
-            <h2 className="nav-section-title">Conta</h2>
-            <NavLink to="/perfil">👤 Perfil</NavLink>
-            <NavLink to="/notificacao">🔔 Notificação</NavLink>
-            <NavLink to="/login">🔑 Login</NavLink>
-            <NavLink to="/criacao-conta">✨ Criar Conta</NavLink>
+            <h2 className="nav-section-title">Checklists</h2>
+            {checklists.map(checklist => (
+              <NavLink
+                key={checklist.title}
+                to={`/${createSlug(checklist.title)}`}
+                className="nav-link"
+              >
+                {checklist.icon} {checklist.title}
+              </NavLink>
+            ))}
           </div>
         </nav>
 
         <main className="main-content">
           <Routes>
-            <Route path="/tv-resenha" element={<TvResenha />} />
-            <Route path="/criacao-conta" element={<CriacaoConta />} />
-            <Route path="/descobrir" element={<Descobrir />} />
-            <Route path="/eventos" element={<Eventos />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/notificacao" element={<Notificacao />} />
-            <Route path="/resenha" element={<Resenha />} />
-            <Route path="/perfil" element={<Perfil />} />
-            <Route path="/flash-dare" element={<FlashDare />} />
-            <Route path="/feed" element={<Feed />} />
-            <Route path="/" element={<Feed />} />
+            <Route path="/dashboard" element={<DashboardSummary />} />
+            {checklists.map(checklist => (
+              <Route
+                key={checklist.title}
+                path={`/${createSlug(checklist.title)}`}
+                element={<ChecklistBase title={checklist.title} initialTasks={checklist.tasks} />}
+              />
+            ))}
+            <Route path="/" element={<DashboardSummary />} />
           </Routes>
         </main>
       </div>

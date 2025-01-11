@@ -1,12 +1,57 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import { checklists } from '../data/checklists';
 
 function DashboardSummary() {
+  const navigate = useNavigate();
   const [summaryData, setSummaryData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [pageLoaded, setPageLoaded] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [activeMenu, setActiveMenu] = useState(null);
+  const longPressTimer = useRef(null);
+  const longPressDelay = 500; // 500ms para considerar pressão longa
+
+  // Função para criar slug do título
+  const createSlug = (text) => {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  };
+
+  // Função para navegar para a página do checklist
+  const handleCardClick = (title) => {
+    navigate(`/${createSlug(title)}`);
+  };
+
+  // Função para processar os dados
+  const processData = () => {
+    const processedData = checklists.map(checklist => {
+      const tasks = checklist.tasks.map(task => ({
+        ...task,
+        status: localStorage.getItem(`task-${task.id}-status`) || 'pending',
+        notes: localStorage.getItem(`task-${task.id}-notes`) || ''
+      }));
+
+      return {
+        title: checklist.title,
+        icon: checklist.icon,
+        totalTasks: tasks.length,
+        working: tasks.filter(t => t.status === 'working').length,
+        broken: tasks.filter(t => t.status === 'broken').length,
+        pending: tasks.filter(t => t.status === 'pending').length,
+        withNotes: tasks.filter(t => t.notes?.trim()).length,
+        progress: Math.round((tasks.filter(t => t.status === 'working').length / tasks.length) * 100)
+      };
+    });
+
+    setSummaryData(processedData);
+    setLoading(false);
+  };
 
   useEffect(() => {
     setPageLoaded(false);
@@ -16,113 +61,121 @@ function DashboardSummary() {
     return () => clearTimeout(timer);
   }, []);
 
-  const loadAllData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error } = await supabase
-        .from('checklists')
-        .select('*');
-
-      if (error) throw error;
-
-      const processedData = data.map(item => {
-        const tasks = JSON.parse(item.tasks);
-        return {
-          title: item.title,
-          totalTasks: tasks.length,
-          working: tasks.filter(t => t.status === 'working').length,
-          broken: tasks.filter(t => t.status === 'broken').length,
-          pending: tasks.filter(t => t.status === 'pending').length,
-          withNotes: tasks.filter(t => t.notes?.trim()).length,
-          progress: Math.round((tasks.filter(t => t.status === 'working').length / tasks.length) * 100),
-          lastUpdate: new Date(item.updated_at).toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        };
-      });
-
-      setSummaryData(processedData);
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Efeito inicial para carregar os dados
   useEffect(() => {
-    loadAllData();
+    processData();
   }, []);
 
-  const handleResetAll = async () => {
+  // Listener para mudanças no localStorage
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key && (e.key.includes('task-') || e.key.includes('notes-'))) {
+        processData();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Adiciona um listener customizado para atualizações locais
+    window.addEventListener('taskStatusChanged', processData);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('taskStatusChanged', processData);
+    };
+  }, []);
+
+  const handleResetAll = () => {
     if (window.confirm('Tem certeza que deseja resetar TODAS as páginas para pendente? Isso também removerá todos os comentários.')) {
       try {
-        setLoading(true);
-        
-        // Busca todos os checklists
-        const { data: checklists, error: fetchError } = await supabase
-          .from('checklists')
-          .select('*');
-
-        if (fetchError) throw fetchError;
-
-        // Para cada checklist, reseta todas as tarefas para pendente
-        const updatePromises = checklists.map(async (checklist) => {
-          const tasks = JSON.parse(checklist.tasks);
-          // Garante que cada tarefa tenha um status e notes definidos
-          const resetTasks = tasks.map(task => ({
-            id: task.id,
-            text: task.text,
-            status: 'pending',
-            notes: ''
-          }));
-
-          return supabase
-            .from('checklists')
-            .update({ 
-              tasks: JSON.stringify(resetTasks),
-              updated_at: new Date().toISOString()
-            })
-            .eq('title', checklist.title);
+        // Reseta todos os status e notas no localStorage
+        checklists.forEach(checklist => {
+          checklist.tasks.forEach(task => {
+            localStorage.setItem(`task-${task.id}-status`, 'pending');
+            localStorage.setItem(`task-${task.id}-notes`, '');
+          });
         });
 
-        // Executa todas as atualizações em paralelo
-        const results = await Promise.all(updatePromises);
+        // Atualiza os dados
+        processData();
         
-        // Verifica se houve algum erro
-        const updateError = results.find(result => result.error);
-        if (updateError) throw updateError.error;
-
-        // Recarrega os dados
-        await loadAllData();
+        // Dispara evento para forçar atualização em todos os componentes
+        window.dispatchEvent(new Event('taskStatusChanged'));
         
         toast.success('Todas as tarefas foram resetadas para pendente');
+
+        // Força um reload da página para garantir que todos os componentes sejam atualizados
+        window.location.reload();
       } catch (error) {
         console.error('Erro ao resetar tarefas:', error);
         toast.error('Erro ao resetar tarefas. Tente novamente.');
-      } finally {
-        setLoading(false);
       }
     }
   };
 
+  // Função para lidar com o início do toque
+  const handleTouchStart = (e, page) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    longPressTimer.current = setTimeout(() => {
+      const rect = e.target.getBoundingClientRect();
+      setMenuPosition({
+        x: touch.clientX,
+        y: touch.clientY
+      });
+      setActiveMenu(page);
+    }, longPressDelay);
+  };
+
+  // Função para lidar com o fim do toque
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+    }
+  };
+
+  // Função para fechar o menu
+  const closeMenu = () => {
+    setActiveMenu(null);
+  };
+
+  // Função para resetar uma página específica
+  const handleResetPage = (page) => {
+    if (window.confirm(`Tem certeza que deseja resetar a página "${page.title}" para pendente? Isso também removerá todos os comentários.`)) {
+      const checklist = checklists.find(c => c.title === page.title);
+      if (checklist) {
+        checklist.tasks.forEach(task => {
+          localStorage.setItem(`task-${task.id}-status`, 'pending');
+          localStorage.setItem(`task-${task.id}-notes`, '');
+        });
+        processData();
+        window.dispatchEvent(new Event('taskStatusChanged'));
+        toast.success(`A página "${page.title}" foi resetada`);
+      }
+    }
+    closeMenu();
+  };
+
+  // Função para copiar estatísticas
+  const handleCopyStats = (page) => {
+    const stats = `
+📊 Estatísticas de ${page.title}:
+✅ Funcionando: ${page.working}
+❌ Problemas: ${page.broken}
+⏳ Pendentes: ${page.pending}
+💬 Comentários: ${page.withNotes}
+📈 Progresso: ${page.progress}%
+    `.trim();
+
+    navigator.clipboard.writeText(stats)
+      .then(() => toast.success('Estatísticas copiadas para a área de transferência'))
+      .catch(() => toast.error('Erro ao copiar estatísticas'));
+    
+    closeMenu();
+  };
+
   if (loading) {
     return <div className={`loading ${pageLoaded ? 'loaded' : ''}`}>Carregando resumo...</div>;
-  }
-
-  if (error) {
-    return (
-      <div className={`error-message ${pageLoaded ? 'loaded' : ''}`}>
-        Erro ao carregar resumo: {error}
-        <button onClick={() => window.location.reload()}>Tentar Novamente</button>
-      </div>
-    );
   }
 
   return (
@@ -140,9 +193,18 @@ function DashboardSummary() {
       
       <div className="dashboard-grid">
         {summaryData.map(page => (
-          <div key={page.title} className="dashboard-card">
+          <div 
+            key={page.title} 
+            className="dashboard-card"
+            onClick={() => !activeMenu && handleCardClick(page.title)}
+            onTouchStart={(e) => handleTouchStart(e, page)}
+            onTouchEnd={handleTouchEnd}
+            onTouchMove={handleTouchEnd}
+            style={{ cursor: 'pointer' }}
+            title={`Ir para ${page.title}`}
+          >
             <div className="card-header">
-              <h2 className="card-title">{page.title}</h2>
+              <h2 className="card-title">{page.icon} {page.title}</h2>
               <div className="card-progress">
                 <div className="progress-ring">
                   <div className="progress-circle" style={{ 
@@ -172,13 +234,33 @@ function DashboardSummary() {
                 <span className="stat-value">{page.withNotes}</span>
               </div>
             </div>
-
-            <div className="card-footer">
-              <span className="last-update">Última atualização: {page.lastUpdate}</span>
-            </div>
           </div>
         ))}
       </div>
+
+      {activeMenu && (
+        <>
+          <div className={`popup-overlay ${activeMenu ? 'active' : ''}`} onClick={closeMenu} />
+          <div 
+            className={`popup-menu ${activeMenu ? 'active' : ''}`}
+            style={{
+              left: `${Math.min(menuPosition.x, window.innerWidth - 220)}px`,
+              top: `${Math.min(menuPosition.y, window.innerHeight - 200)}px`
+            }}
+          >
+            <div className="popup-menu-item" onClick={() => handleCardClick(activeMenu.title)}>
+              <i>📋</i> Abrir página
+            </div>
+            <div className="popup-menu-item" onClick={() => handleCopyStats(activeMenu)}>
+              <i>📊</i> Copiar estatísticas
+            </div>
+            <div className="popup-menu-divider" />
+            <div className="popup-menu-item danger" onClick={() => handleResetPage(activeMenu)}>
+              <i>🔄</i> Resetar página
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

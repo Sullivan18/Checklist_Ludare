@@ -37,137 +37,57 @@ function ChecklistBase({ title, initialTasks = [] }) {
     localStorage.setItem('infoBannerDismissed', 'true');
   };
 
-  // Carregar dados do Supabase
+  // Carregar dados iniciais
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        console.log('Carregando dados para:', title);
-        
-        const { data, error } = await supabase
-          .from('checklists')
-          .select('*')
-          .eq('title', title)
-          .single();
-
-        if (error) {
-          console.error('Erro ao carregar dados:', error);
-          if (error.code === 'PGRST116') {
-            // Caso não encontre dados, vamos criar um novo registro
-            const initialTasksData = initialTasks.map(task => ({
-              id: task.id,
-              text: task.text,
-              status: 'pending',
-              notes: ''
-            }));
-
-            const { data: newData, error: insertError } = await supabase
-              .from('checklists')
-              .insert([
-                { 
-                  title, 
-                  tasks: JSON.stringify(initialTasksData),
-                  updated_at: new Date().toISOString()
-                }
-              ])
-              .select()
-              .single();
-
-            if (insertError) throw insertError;
-            
-            if (newData) {
-              setTasks(initialTasksData);
-            }
-          } else {
-            throw error;
-          }
-          return;
-        }
-
-        if (data) {
-          console.log('Dados carregados:', data);
-          const savedTasks = JSON.parse(data.tasks);
-          // Garante que todas as tarefas tenham os campos necessários
-          const processedTasks = initialTasks.map(task => {
-            const savedTask = savedTasks.find(t => t.id === task.id);
-            return {
-              id: task.id,
-              text: task.text,
-              status: savedTask?.status || 'pending',
-              notes: savedTask?.notes || ''
-            };
-          });
-          setTasks(processedTasks);
-        }
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        setError(error.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
+    setLoading(true);
+    try {
+      // Carrega o status e notas do localStorage
+      const loadedTasks = initialTasks.map(task => ({
+        ...task,
+        status: localStorage.getItem(`task-${task.id}-status`) || 'pending',
+        notes: localStorage.getItem(`task-${task.id}-notes`) || ''
+      }));
+      setTasks(loadedTasks);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
   }, [title, initialTasks]);
 
-  // Salvar dados no Supabase
+  // Salvar dados no localStorage quando houver mudanças
   useEffect(() => {
-    const saveData = async () => {
-      try {
-        setError(null);
-        const dataToSave = tasks.map(({ id, status, notes }) => ({ id, status, notes }));
-        console.log('Salvando dados:', { title, tasks: dataToSave });
-        
-        const { error } = await supabase
-          .from('checklists')
-          .upsert({ 
-            title, 
-            tasks: JSON.stringify(dataToSave),
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'title'
-          });
-
-        if (error) {
-          console.error('Erro ao salvar dados:', error);
-          setError(error.message);
-        } else {
-          console.log('Dados salvos com sucesso!');
-        }
-      } catch (error) {
-        console.error('Erro ao salvar dados:', error);
-        setError(error.message);
-      }
-    };
-
     if (!loading && tasks.length > 0) {
-      const debounceTimer = setTimeout(() => {
-        saveData();
-      }, 1000);
-
-      return () => clearTimeout(debounceTimer);
+      tasks.forEach(task => {
+        localStorage.setItem(`task-${task.id}-status`, task.status);
+        if (task.notes) {
+          localStorage.setItem(`task-${task.id}-notes`, task.notes);
+        }
+      });
+      // Dispara evento para atualizar o dashboard
+      window.dispatchEvent(new Event('taskStatusChanged'));
     }
-  }, [tasks, title, loading]);
+  }, [tasks, loading]);
 
-  const handleStatusChange = (id, newStatus) => {
-    console.log('Mudando status:', { id, newStatus });
-    setTasks(currentTasks => {
-      const newTasks = currentTasks.map(task =>
-        task.id === id ? { ...task, status: newStatus } : task
-      );
-      return newTasks;
+  const handleStatusChange = (taskId, newStatus) => {
+    const updatedTasks = tasks.map(task => {
+      if (task.id === taskId) {
+        return { ...task, status: newStatus };
+      }
+      return task;
     });
+    setTasks(updatedTasks);
   };
 
-  const handleNoteChange = (id, note) => {
-    console.log('Mudando nota:', { id, note });
-    setTasks(currentTasks => {
-      const newTasks = currentTasks.map(task =>
-        task.id === id ? { ...task, notes: note } : task
-      );
-      return newTasks;
+  const handleNotesChange = (taskId, notes) => {
+    const updatedTasks = tasks.map(task => {
+      if (task.id === taskId) {
+        return { ...task, notes };
+      }
+      return task;
     });
+    setTasks(updatedTasks);
   };
 
   const getProgress = () => {
@@ -299,7 +219,7 @@ function ChecklistBase({ title, initialTasks = [] }) {
                 <textarea
                   placeholder="Adicione observações sobre esta tarefa..."
                   value={task.notes}
-                  onChange={(e) => handleNoteChange(task.id, e.target.value)}
+                  onChange={(e) => handleNotesChange(task.id, e.target.value)}
                   rows="3"
                   className="notes-input"
                 />

@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { useState } from 'react';
 import ChecklistBase from './components/ChecklistBase';
 import DashboardSummary from './components/DashboardSummary';
 import LudareLogo from './components/LudareLogo';
@@ -17,11 +18,38 @@ const createSlug = (text) => {
 };
 
 function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const toggleMenu = () => {
+    setMenuOpen(!menuOpen);
+  };
+
+  const closeMenu = () => {
+    setMenuOpen(false);
+  };
+
   return (
     <Router>
       <div className="app-container">
         <Toaster position="top-right" />
-        <nav className="sidebar">
+        
+        {/* Menu Hamburguer */}
+        <button 
+          className={`hamburger-button ${menuOpen ? 'active' : ''}`}
+          onClick={toggleMenu}
+          aria-label="Menu"
+        >
+          <span className="hamburger-icon"></span>
+        </button>
+
+        {/* Overlay para fechar o menu */}
+        <div 
+          className={`sidebar-overlay ${menuOpen ? 'active' : ''}`}
+          onClick={closeMenu}
+        ></div>
+
+        {/* Sidebar */}
+        <nav className={`sidebar ${menuOpen ? 'active' : ''}`}>
           <div className="sidebar-header">
             <LudareLogo />
             <h1>Checklist</h1>
@@ -29,7 +57,11 @@ function App() {
 
           <div className="nav-section">
             <h2 className="nav-section-title">Geral</h2>
-            <NavLink to="/dashboard" className="nav-link">
+            <NavLink 
+              to="/dashboard" 
+              className="nav-link"
+              onClick={closeMenu}
+            >
               📊 Resumo Geral
             </NavLink>
           </div>
@@ -41,6 +73,7 @@ function App() {
                 key={checklist.title}
                 to={`/${createSlug(checklist.title)}`}
                 className="nav-link"
+                onClick={closeMenu}
               >
                 {checklist.icon} {checklist.title}
               </NavLink>

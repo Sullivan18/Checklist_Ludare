@@ -58,6 +58,9 @@ body {
   line-height: 1.5;
   background: var(--color-background);
   color: var(--color-text);
+  overflow-x: hidden;
+  width: 100%;
+  position: relative;
 }
 
 /* Layout Principal */
@@ -65,6 +68,9 @@ body {
   display: flex;
   min-height: 100vh;
   background: var(--color-background);
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 /* Barra Lateral */
@@ -140,6 +146,10 @@ body {
   background: var(--color-background);
   min-height: 100vh;
   transition: opacity 0.3s ease-in-out;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .main-content.loading {
@@ -189,6 +199,10 @@ body {
   opacity: 0;
   transform: translateY(20px);
   transition: opacity 0.5s ease-out, transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
 }
 
 .checklist-page.loaded {
@@ -314,6 +328,9 @@ body {
   overflow: hidden;
   animation: fadeIn 0.5s ease-out;
   animation-fill-mode: both;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .task-item:nth-child(1) { animation-delay: 0.1s; }
@@ -680,73 +697,7 @@ body {
 }
 
 .info-banner {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: white;
-  padding: 0;
-  margin: -32px -32px 32px -32px;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  overflow: hidden;
-  box-shadow: var(--shadow-lg);
-  animation: fadeIn 0.5s ease-out;
-}
-
-.info-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 32px;
-  position: relative;
-  background: rgba(255,255,255,0.1);
-  backdrop-filter: blur(10px);
-}
-
-.info-icon {
-  font-size: 24px;
-  flex-shrink: 0;
-}
-
-.info-banner p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  flex: 1;
-  font-weight: 500;
-}
-
-.info-close {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.8;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.info-close:hover {
-  opacity: 1;
-  transform: scale(1.1);
-}
-
-@media (max-width: 768px) {
-  .info-banner-content {
-    flex-direction: column;
-    text-align: center;
-    padding: 16px;
-  }
-
-  .info-close {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-  }
+  display: none;
 }
 
 /* Dashboard */
@@ -774,8 +725,8 @@ body {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   margin-top: 24px;
 }
 
@@ -785,13 +736,51 @@ body {
   padding: 24px;
   box-shadow: var(--shadow-md);
   border: 1px solid rgba(0,0,0,0.05);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: fadeIn 0.5s ease-out;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 
 .dashboard-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
+  background: linear-gradient(to bottom right, var(--color-surface), rgba(99, 102, 241, 0.05));
+}
+
+.dashboard-card:active {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Efeito de ripple ao clicar */
+.dashboard-card::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: rgba(99, 102, 241, 0.3);
+  opacity: 0;
+  border-radius: 100%;
+  transform: scale(1, 1) translate(-50%);
+  transform-origin: 50% 50%;
+}
+
+.dashboard-card:active::after {
+  animation: ripple 0.6s ease-out;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0, 0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(100, 100);
+    opacity: 0;
+  }
 }
 
 .card-header {
@@ -899,11 +888,62 @@ body {
   }
 
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px;
+  }
+
+  .dashboard-card {
+    padding: 12px;
+    min-width: 0; /* Previne overflow */
+  }
+
+  .dashboard-card h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .card-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .stat-item {
+    padding: 6px;
+  }
+
+  .stat-value {
+    font-size: 14px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Ajustes para telas muito pequenas */
+@media (max-width: 360px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+  }
+
+  .dashboard-card {
+    padding: 8px;
+  }
+
+  .stat-value {
+    font-size: 12px;
+  }
+
+  .stat-label {
+    font-size: 10px;
   }
 }
 
@@ -926,4 +966,397 @@ body {
   height: auto;
   display: block;
   margin: 0 auto;
+}
+
+/* Menu Hamburguer */
+.hamburger-button {
+  display: none;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  background: var(--color-surface);
+  border: none;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.hamburger-button:hover {
+  transform: scale(1.05);
+}
+
+.hamburger-icon {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--color-text);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.hamburger-icon::before,
+.hamburger-icon::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 2px;
+  background: var(--color-text);
+  transition: all 0.3s ease;
+}
+
+.hamburger-icon::before {
+  top: -6px;
+}
+
+.hamburger-icon::after {
+  bottom: -6px;
+}
+
+.hamburger-button.active .hamburger-icon {
+  background: transparent;
+}
+
+.hamburger-button.active .hamburger-icon::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.hamburger-button.active .hamburger-icon::after {
+  bottom: 0;
+  transform: rotate(-45deg);
+}
+
+/* Ajustes de Responsividade */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -100%;
+    width: 80%;
+    height: 100vh;
+    z-index: 999;
+    transition: all 0.3s ease;
+    background: var(--color-surface);
+  }
+
+  .sidebar.active {
+    left: 0;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 80px 16px 16px;
+    width: 100%;
+  }
+
+  .hamburger-button {
+    display: block;
+  }
+
+  .checklist-page {
+    padding: 20px;
+    width: auto;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .info-banner {
+    margin: 0 0 20px 0;
+    border-radius: 0;
+  }
+
+  .checklist-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .header-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .checklist-title {
+    font-size: 24px;
+  }
+
+  .progress-bar {
+    width: 100%;
+    max-width: none;
+    margin: 10px 0;
+  }
+
+  .filter-buttons {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .filter-button {
+    flex: 1;
+    min-width: calc(50% - 8px);
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  .task-content {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .task-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .task-text {
+    font-size: 14px;
+  }
+
+  .status-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .chart-legend {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .legend-item {
+    width: 100%;
+  }
+
+  /* Dashboard Responsivo */
+  .dashboard-page {
+    padding: 16px;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .dashboard-title {
+    font-size: 28px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .card-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-item {
+    padding: 8px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  /* Overlay para quando o menu estiver aberto */
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 998;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .sidebar-overlay.active {
+    display: block;
+    opacity: 1;
+  }
+}
+
+/* Ajustes para telas muito pequenas */
+@media (max-width: 480px) {
+  .card-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-button {
+    min-width: 100%;
+  }
+
+  .checklist-title {
+    font-size: 20px;
+  }
+
+  .task-notes textarea {
+    min-height: 80px;
+  }
+}
+
+/* Ajustes para telas médias */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .sidebar {
+    width: 240px;
+  }
+
+  .main-content {
+    margin-left: 240px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Prevenção rigorosa de scroll horizontal */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+/* Garantir que todos os elementos respeitem a largura da viewport */
+*, *::before, *::after {
+  box-sizing: border-box;
+  max-width: 100vw;
+}
+
+/* Ajustes específicos para elementos que podem causar overflow */
+.info-banner-content {
+  padding: 20px 16px;
+  flex-wrap: wrap;
+}
+
+.task-content {
+  word-break: break-word;
+}
+
+.task-text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.checklist-page {
+  padding: 20px 16px;
+  margin: 0;
+  border-radius: 0;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 80px 12px 16px;
+    width: 100%;
+    margin: 0;
+  }
+
+  .filter-buttons {
+    padding: 0 4px;
+  }
+
+  .info-banner {
+    width: 100vw;
+    margin-left: -16px;
+    padding: 0 16px;
+    box-sizing: border-box;
+  }
+
+  .task-item {
+    padding: 16px 12px;
+  }
+
+  .sidebar {
+    width: 85%;
+    max-width: 300px;
+  }
+}
+
+/* Menu Popup */
+.popup-menu {
+  position: fixed;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  z-index: 1000;
+  min-width: 200px;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.popup-menu.active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.popup-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.popup-menu-item:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--color-primary);
+}
+
+.popup-menu-item.danger {
+  color: var(--color-danger);
+}
+
+.popup-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+}
+
+.popup-menu-item i {
+  font-size: 18px;
+  opacity: 0.8;
+}
+
+.popup-menu-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 8px 0;
+}
+
+/* Overlay para o menu popup */
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.popup-overlay.active {
+  opacity: 1;
 } 

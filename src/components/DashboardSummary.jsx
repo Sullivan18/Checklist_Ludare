@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { checklists } from '../data/checklists';
+import { supabase } from '../supabaseClient';
 
 function DashboardSummary() {
   const navigate = useNavigate();
@@ -28,29 +29,50 @@ function DashboardSummary() {
     navigate(`/${createSlug(title)}`);
   };
 
-  // Função para processar os dados
-  const processData = () => {
-    const processedData = checklists.map(checklist => {
-      const tasks = checklist.tasks.map(task => ({
-        ...task,
-        status: localStorage.getItem(`task-${task.id}-status`) || 'pending',
-        notes: localStorage.getItem(`task-${task.id}-notes`) || ''
-      }));
+  // Função para processar os dados do Supabase
+  const processData = async () => {
+    try {
+      const { data: tasksData, error } = await supabase
+        .from('tasks')
+        .select('*');
 
-      return {
-        title: checklist.title,
-        icon: checklist.icon,
-        totalTasks: tasks.length,
-        working: tasks.filter(t => t.status === 'working').length,
-        broken: tasks.filter(t => t.status === 'broken').length,
-        pending: tasks.filter(t => t.status === 'pending').length,
-        withNotes: tasks.filter(t => t.notes?.trim()).length,
-        progress: Math.round((tasks.filter(t => t.status === 'working').length / tasks.length) * 100)
-      };
-    });
+      if (error) throw error;
 
-    setSummaryData(processedData);
-    setLoading(false);
+      const processedData = checklists.map(checklist => {
+        const tasks = checklist.tasks.map(task => {
+          const savedTask = tasksData?.find(t => 
+            t.task_id === task.id && 
+            t.page_title === checklist.title
+          );
+          return {
+            ...task,
+            status: savedTask?.status || 'pending',
+            notes: savedTask?.notes || ''
+          };
+        });
+
+        const workingTasks = tasks.filter(t => t.status === 'working').length;
+        const totalTasks = tasks.length;
+
+        return {
+          title: checklist.title,
+          icon: checklist.icon,
+          totalTasks: totalTasks,
+          working: workingTasks,
+          broken: tasks.filter(t => t.status === 'broken').length,
+          pending: tasks.filter(t => t.status === 'pending').length,
+          withNotes: tasks.filter(t => t.notes?.trim()).length,
+          progress: Math.round((workingTasks / totalTasks) * 100)
+        };
+      });
+
+      setSummaryData(processedData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      toast.error('Erro ao carregar dados do dashboard');
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -85,31 +107,26 @@ function DashboardSummary() {
     };
   }, []);
 
-  const handleResetAll = () => {
-    if (window.confirm('Tem certeza que deseja resetar TODAS as páginas para pendente? Isso também removerá todos os comentários.')) {
-      try {
-        // Reseta todos os status e notas no localStorage
-        checklists.forEach(checklist => {
-          checklist.tasks.forEach(task => {
-            localStorage.setItem(`task-${task.id}-status`, 'pending');
-            localStorage.setItem(`task-${task.id}-notes`, '');
-          });
-        });
+  // Resetar todas as páginas
+  const handleResetAll = async () => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .neq('task_id', '');  // Deleta todos os registros
 
-        // Atualiza os dados
-        processData();
-        
-        // Dispara evento para forçar atualização em todos os componentes
-        window.dispatchEvent(new Event('taskStatusChanged'));
-        
-        toast.success('Todas as tarefas foram resetadas para pendente');
+      if (error) throw error;
 
-        // Força um reload da página para garantir que todos os componentes sejam atualizados
-        window.location.reload();
-      } catch (error) {
-        console.error('Erro ao resetar tarefas:', error);
-        toast.error('Erro ao resetar tarefas. Tente novamente.');
-      }
+      // Atualiza os dados
+      processData();
+      
+      // Dispara evento para forçar atualização em todos os componentes
+      window.dispatchEvent(new Event('taskStatusChanged'));
+      
+      toast.success('Todas as tarefas foram resetadas para pendente');
+    } catch (error) {
+      console.error('Erro ao resetar tarefas:', error);
+      toast.error('Erro ao resetar tarefas. Tente novamente.');
     }
   };
 
@@ -139,21 +156,24 @@ function DashboardSummary() {
     setActiveMenu(null);
   };
 
-  // Função para resetar uma página específica
-  const handleResetPage = (page) => {
-    if (window.confirm(`Tem certeza que deseja resetar a página "${page.title}" para pendente? Isso também removerá todos os comentários.`)) {
-      const checklist = checklists.find(c => c.title === page.title);
-      if (checklist) {
-        checklist.tasks.forEach(task => {
-          localStorage.setItem(`task-${task.id}-status`, 'pending');
-          localStorage.setItem(`task-${task.id}-notes`, '');
-        });
-        processData();
-        window.dispatchEvent(new Event('taskStatusChanged'));
-        toast.success(`A página "${page.title}" foi resetada`);
-      }
+  // Resetar uma página específica
+  const handleResetPage = async (page) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('page_title', page.title);
+
+      if (error) throw error;
+
+      processData();
+      window.dispatchEvent(new Event('taskStatusChanged'));
+      toast.success(`A página "${page.title}" foi resetada`);
+      closeMenu();
+    } catch (error) {
+      console.error('Erro ao resetar página:', error);
+      toast.error('Erro ao resetar página. Tente novamente.');
     }
-    closeMenu();
   };
 
   // Função para copiar estatísticas

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { checklists } from '../data/checklists';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 
 function ChecklistBase({ title, initialTasks = [] }) {
   const [tasks, setTasks] = useState(initialTasks.map(task => ({
@@ -16,6 +18,7 @@ function ChecklistBase({ title, initialTasks = [] }) {
     return !localStorage.getItem('infoBannerDismissed');
   });
   const [pageLoaded, setPageLoaded] = useState(false);
+  const navigate = useNavigate();
 
   // Encontrar o ícone correspondente ao título
   const pageIcon = checklists.find(c => c.title === title)?.icon || '📋';
@@ -37,40 +40,66 @@ function ChecklistBase({ title, initialTasks = [] }) {
     localStorage.setItem('infoBannerDismissed', 'true');
   };
 
-  // Carregar dados iniciais
+  // Carregar dados do Supabase
   useEffect(() => {
-    setLoading(true);
-    try {
-      // Carrega o status e notas do localStorage
-      const loadedTasks = initialTasks.map(task => ({
-        ...task,
-        status: localStorage.getItem(`task-${task.id}-status`) || 'pending',
-        notes: localStorage.getItem(`task-${task.id}-notes`) || ''
-      }));
-      setTasks(loadedTasks);
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
+    async function loadTasks() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('page_title', title);
+
+        if (error) throw error;
+
+        const loadedTasks = initialTasks.map(task => {
+          const savedTask = data?.find(t => t.task_id === task.id);
+          return {
+            ...task,
+            status: savedTask?.status || 'pending',
+            notes: savedTask?.notes || ''
+          };
+        });
+
+        setTasks(loadedTasks);
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        setError(error.message);
+        toast.error('Erro ao carregar dados. Tente novamente.');
+      } finally {
+        setLoading(false);
+      }
     }
+
+    loadTasks();
   }, [title, initialTasks]);
 
-  // Salvar dados no localStorage quando houver mudanças
-  useEffect(() => {
-    if (!loading && tasks.length > 0) {
-      tasks.forEach(task => {
-        localStorage.setItem(`task-${task.id}-status`, task.status);
-        if (task.notes) {
-          localStorage.setItem(`task-${task.id}-notes`, task.notes);
-        }
-      });
+  // Salvar dados no Supabase quando houver mudanças
+  const saveTask = async (taskId, status, notes) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .upsert({
+          task_id: taskId,
+          page_title: title,
+          status,
+          notes,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'task_id,page_title'
+        });
+
+      if (error) throw error;
+      
       // Dispara evento para atualizar o dashboard
       window.dispatchEvent(new Event('taskStatusChanged'));
+    } catch (error) {
+      console.error('Erro ao salvar tarefa:', error);
+      toast.error('Erro ao salvar alterações. Tente novamente.');
     }
-  }, [tasks, loading]);
+  };
 
-  const handleStatusChange = (taskId, newStatus) => {
+  const handleStatusChange = async (taskId, newStatus) => {
     const updatedTasks = tasks.map(task => {
       if (task.id === taskId) {
         return { ...task, status: newStatus };
@@ -78,9 +107,12 @@ function ChecklistBase({ title, initialTasks = [] }) {
       return task;
     });
     setTasks(updatedTasks);
+
+    const task = updatedTasks.find(t => t.id === taskId);
+    await saveTask(taskId, newStatus, task.notes);
   };
 
-  const handleNotesChange = (taskId, notes) => {
+  const handleNotesChange = async (taskId, notes) => {
     const updatedTasks = tasks.map(task => {
       if (task.id === taskId) {
         return { ...task, notes };
@@ -88,6 +120,9 @@ function ChecklistBase({ title, initialTasks = [] }) {
       return task;
     });
     setTasks(updatedTasks);
+
+    const task = updatedTasks.find(t => t.id === taskId);
+    await saveTask(taskId, task.status, notes);
   };
 
   const getProgress = () => {
@@ -100,6 +135,46 @@ function ChecklistBase({ title, initialTasks = [] }) {
     if (filter === 'all') return true;
     return task.status === filter;
   });
+
+  // Gestos de deslize
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+
+  const onTouchStart = (e) => {
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.touches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isSwipe = Math.abs(distance) > 50;
+
+    if (isSwipe) {
+      if ('vibrate' in navigator) {
+        navigator.vibrate(30);
+      }
+      // Deslizar para a esquerda
+      if (distance > 0) {
+        const currentIndex = checklists.findIndex(c => c.title === title);
+        const nextChecklist = checklists[currentIndex + 1];
+        if (nextChecklist) {
+          navigate(`/${createSlug(nextChecklist.title)}`);
+        }
+      }
+      // Deslizar para a direita
+      else {
+        const currentIndex = checklists.findIndex(c => c.title === title);
+        const prevChecklist = checklists[currentIndex - 1];
+        if (prevChecklist) {
+          navigate(`/${createSlug(prevChecklist.title)}`);
+        }
+      }
+    }
+  };
 
   if (loading) {
     return <div className={`loading ${pageLoaded ? 'loaded' : ''}`}>Carregando...</div>;
@@ -115,7 +190,12 @@ function ChecklistBase({ title, initialTasks = [] }) {
   }
 
   return (
-    <div className={`checklist-page ${pageLoaded ? 'loaded' : ''}`}>
+    <div 
+      className={`checklist-page ${pageLoaded ? 'loaded' : ''}`}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       {showBanner && (
         <div className="info-banner">
           <div className="info-banner-content">

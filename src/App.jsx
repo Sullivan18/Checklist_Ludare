@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useState, useEffect, Suspense } from 'react';
 import ChecklistBase from './components/ChecklistBase';
@@ -23,21 +23,67 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [touchStart, setTouchStart] = useState(null);
   const [touchEnd, setTouchEnd] = useState(null);
+  const [currentProfile, setCurrentProfile] = useState(() => {
+    return localStorage.getItem('currentProfile') || null;
+  });
 
-  const toggleMenu = () => {
-    setMenuOpen(!menuOpen);
-    // Adiciona ou remove a classe no body para controlar o scroll
-    if (!menuOpen) {
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.width = '100%';
-      document.body.style.height = '100%';
-    } else {
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-      document.body.style.height = '';
+  useEffect(() => {
+    if (currentProfile) {
+      localStorage.setItem('currentProfile', currentProfile);
     }
+  }, [currentProfile]);
+
+  const handleProfileSelect = (profile) => {
+    setCurrentProfile(profile);
+  };
+
+  const handleLogout = () => {
+    setCurrentProfile(null);
+    localStorage.removeItem('currentProfile');
+  };
+
+  // Se não houver perfil selecionado, mostrar tela de seleção
+  if (!currentProfile) {
+    return (
+      <div className="profile-selection">
+        <div className="profile-header">
+          <LudareLogo />
+          <h1>Selecione seu Perfil</h1>
+        </div>
+        <div className="profile-grid">
+          <button 
+            className="profile-button"
+            onClick={() => handleProfileSelect('Perfil 1')}
+          >
+            👤 Perfil 1
+          </button>
+          <button 
+            className="profile-button"
+            onClick={() => handleProfileSelect('Perfil 2')}
+          >
+            👤 Perfil 2
+          </button>
+          <button 
+            className="profile-button"
+            onClick={() => handleProfileSelect('Perfil 3')}
+          >
+            👤 Perfil 3
+          </button>
+          <button 
+            className="profile-button admin"
+            onClick={() => handleProfileSelect('admin')}
+          >
+            👑 Administrador
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const toggleMenu = (e) => {
+    e.preventDefault(); // Previne o comportamento padrão
+    e.stopPropagation(); // Impede a propagação do evento
+    setMenuOpen(!menuOpen);
   };
 
   const closeMenu = () => {
@@ -81,7 +127,7 @@ function App() {
         
         {/* Pull to Refresh Indicator */}
         <div className={`pull-to-refresh ${isRefreshing ? 'active' : ''}`}>
-          <span>↓ Puxe para atualizar</span>
+          <span>Solte para atualizar</span>
         </div>
         
         {/* Logo Mobile */}
@@ -109,6 +155,12 @@ function App() {
           <div className="sidebar-header">
             <LudareLogo />
             <h1>Checklist</h1>
+            <div className="profile-info">
+              <span className="profile-name">👤 {currentProfile}</span>
+              <button className="logout-button" onClick={handleLogout}>
+                Sair
+              </button>
+            </div>
           </div>
 
           <div className="nav-section">
@@ -140,15 +192,15 @@ function App() {
         <main className="main-content">
           <Suspense fallback={<div className="skeleton">Carregando...</div>}>
             <Routes>
-              <Route path="/dashboard" element={<DashboardSummary />} />
+              <Route path="/dashboard" element={<DashboardSummary profileId={currentProfile} />} />
               {checklists.map(checklist => (
                 <Route
                   key={checklist.title}
                   path={`/${createSlug(checklist.title)}`}
-                  element={<ChecklistBase title={checklist.title} initialTasks={checklist.tasks} />}
+                  element={<ChecklistBase title={checklist.title} initialTasks={checklist.tasks} profileId={currentProfile} />}
                 />
               ))}
-              <Route path="/" element={<DashboardSummary />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
         </main>

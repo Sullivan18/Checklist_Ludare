@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { checklists } from '../data/checklists';
 import { supabase } from '../supabaseClient';
 
-function DashboardSummary() {
+function DashboardSummary({ profileId }) {
   const navigate = useNavigate();
   const [summaryData, setSummaryData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,32 @@ function DashboardSummary() {
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [activeMenu, setActiveMenu] = useState(null);
   const longPressTimer = useRef(null);
-  const longPressDelay = 500; // 500ms para considerar pressão longa
+  const longPressDelay = 500;
+  const [selectedProfile, setSelectedProfile] = useState('all');
+  const [profiles, setProfiles] = useState([]);
+
+  // Buscar lista de perfis disponíveis
+  useEffect(() => {
+    if (profileId === 'admin') {
+      async function fetchProfiles() {
+        try {
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('profile_id')
+            .not('profile_id', 'eq', 'admin');
+          
+          if (error) throw error;
+          
+          // Extrair perfis únicos
+          const uniqueProfiles = [...new Set(data.map(item => item.profile_id))];
+          setProfiles(['all', ...uniqueProfiles.sort()]);
+        } catch (error) {
+          console.error('Erro ao buscar perfis:', error);
+        }
+      }
+      fetchProfiles();
+    }
+  }, [profileId]);
 
   // Função para criar slug do título
   const createSlug = (text) => {
@@ -32,37 +57,126 @@ function DashboardSummary() {
   // Função para processar os dados do Supabase
   const processData = async () => {
     try {
-      const { data: tasksData, error } = await supabase
-        .from('tasks')
-        .select('*');
-
-      if (error) throw error;
+      let tasksData;
+      
+      if (profileId === 'admin') {
+        if (selectedProfile === 'all') {
+          // Buscar dados de todos os perfis
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('*');
+          
+          if (error) throw error;
+          tasksData = data;
+        } else {
+          // Buscar dados apenas do perfil selecionado
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('profile_id', selectedProfile);
+          
+          if (error) throw error;
+          tasksData = data;
+        }
+      } else {
+        // Para perfis normais, buscar apenas seus dados
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('profile_id', profileId);
+        
+        if (error) throw error;
+        tasksData = data;
+      }
 
       const processedData = checklists.map(checklist => {
         const tasks = checklist.tasks.map(task => {
-          const savedTask = tasksData?.find(t => 
-            t.task_id === task.id && 
-            t.page_title === checklist.title
-          );
-          return {
-            ...task,
-            status: savedTask?.status || 'pending',
-            notes: savedTask?.notes || ''
-          };
+          if (profileId === 'admin') {
+            // Para admin, agrupar por perfil e mostrar todas as marcações
+            const tasksByProfile = {};
+            const taskEntries = tasksData.filter(t => 
+              t.task_id === task.id && 
+              t.page_title === checklist.title
+            );
+
+            // Agrupar por perfil
+            taskEntries.forEach(entry => {
+              if (!tasksByProfile[entry.profile_id]) {
+                tasksByProfile[entry.profile_id] = [];
+              }
+              tasksByProfile[entry.profile_id].push(entry);
+            });
+
+            return {
+              ...task,
+              profileStatuses: Object.entries(tasksByProfile).map(([profile, entries]) => ({
+                profileId: profile,
+                status: entries[0].status,
+                notes: entries[0].notes
+              }))
+            };
+          } else {
+            // Para perfis normais, manter a lógica atual
+            const savedTask = tasksData?.find(t => 
+              t.task_id === task.id && 
+              t.page_title === checklist.title &&
+              t.profile_id === profileId
+            );
+            return {
+              ...task,
+              status: savedTask?.status || 'pending',
+              notes: savedTask?.notes || ''
+            };
+          }
         });
 
         const workingTasks = tasks.filter(t => t.status === 'working').length;
-        const totalTasks = tasks.length;
+        const baseTotalTasks = tasks.length;
+
+        // Calcular média da página por perfil
+        const profileAverages = {};
+        if (profileId === 'admin') {
+          tasks.forEach(task => {
+            task.profileStatuses?.forEach(ps => {
+              if (!profileAverages[ps.profileId]) {
+                profileAverages[ps.profileId] = {
+                  working: 0,
+                  total: 0
+                };
+              }
+              profileAverages[ps.profileId].total++;
+              if (ps.status === 'working') {
+                profileAverages[ps.profileId].working++;
+              }
+            });
+          });
+
+          // Converter para porcentagens
+          Object.keys(profileAverages).forEach(profile => {
+            profileAverages[profile] = Math.round(
+              (profileAverages[profile].working / profileAverages[profile].total) * 100
+            );
+          });
+        }
+
+        // Calcular média geral da página baseada no total de tarefas funcionando
+        const totalPossibleTasks = baseTotalTasks * Object.keys(profileAverages).length; // Total de tarefas x número de perfis
+        const totalWorkingTasks = tasks.reduce((sum, task) => {
+          return sum + task.profileStatuses?.filter(ps => ps.status === 'working').length || 0;
+        }, 0);
+        const averageProgress = totalPossibleTasks > 0 ? Math.round((totalWorkingTasks / totalPossibleTasks) * 100) : 0;
 
         return {
           title: checklist.title,
           icon: checklist.icon,
-          totalTasks: totalTasks,
-          working: workingTasks,
+          totalTasks: baseTotalTasks,
+          working: tasks.filter(t => t.status === 'working').length,
           broken: tasks.filter(t => t.status === 'broken').length,
           pending: tasks.filter(t => t.status === 'pending').length,
           withNotes: tasks.filter(t => t.notes?.trim()).length,
-          progress: Math.round((workingTasks / totalTasks) * 100)
+          progress: profileId === 'admin' ? averageProgress : Math.round((workingTasks / baseTotalTasks) * 100),
+          tasks: profileId === 'admin' ? tasks : undefined,
+          profileAverages: profileId === 'admin' ? profileAverages : undefined
         };
       });
 
@@ -83,39 +197,39 @@ function DashboardSummary() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Efeito inicial para carregar os dados
   useEffect(() => {
     processData();
-  }, []);
+  }, [selectedProfile, profileId]);
 
-  // Listener para mudanças no localStorage
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key && (e.key.includes('task-') || e.key.includes('notes-'))) {
-        processData();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Adiciona um listener customizado para atualizações locais
     window.addEventListener('taskStatusChanged', processData);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('taskStatusChanged', processData);
-    };
-  }, []);
+    return () => window.removeEventListener('taskStatusChanged', processData);
+  }, [selectedProfile, profileId]);
 
   // Resetar todas as páginas
   const handleResetAll = async () => {
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .neq('task_id', '');  // Deleta todos os registros
+      if (profileId === 'admin') {
+        // Para admin, confirmar antes de resetar todos os perfis
+        if (!confirm('Tem certeza que deseja resetar os dados de TODOS os perfis?')) {
+          return;
+        }
+        // Deletar dados de todos os perfis
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .not('profile_id', 'eq', 'admin');
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        // Para perfis normais, resetar apenas seus próprios dados
+        const { error } = await supabase
+          .from('tasks')
+          .delete()
+          .eq('profile_id', profileId);
+
+        if (error) throw error;
+      }
 
       // Atualiza os dados
       processData();
@@ -123,7 +237,10 @@ function DashboardSummary() {
       // Dispara evento para forçar atualização em todos os componentes
       window.dispatchEvent(new Event('taskStatusChanged'));
       
-      toast.success('Todas as tarefas foram resetadas para pendente');
+      toast.success(profileId === 'admin' 
+        ? 'Todas as tarefas de todos os perfis foram resetadas'
+        : 'Todas as suas tarefas foram resetadas para pendente'
+      );
     } catch (error) {
       console.error('Erro ao resetar tarefas:', error);
       toast.error('Erro ao resetar tarefas. Tente novamente.');
@@ -162,7 +279,8 @@ function DashboardSummary() {
       const { error } = await supabase
         .from('tasks')
         .delete()
-        .eq('page_title', page.title);
+        .eq('page_title', page.title)
+        .eq('profile_id', profileId);
 
       if (error) throw error;
 
@@ -184,7 +302,7 @@ function DashboardSummary() {
 ❌ Problemas: ${page.broken}
 ⏳ Pendentes: ${page.pending}
 💬 Comentários: ${page.withNotes}
-📈 Progresso: ${page.progress}%
+�� Progresso: ${page.progress}%
     `.trim();
 
     navigator.clipboard.writeText(stats)
@@ -201,7 +319,27 @@ function DashboardSummary() {
   return (
     <div className={`dashboard-page ${pageLoaded ? 'loaded' : ''}`}>
       <div className="dashboard-header">
-        <h1 className="dashboard-title">Resumo Geral</h1>
+        <h1 className="dashboard-title">
+          {profileId === 'admin' ? 'Dashboard Administrativo' : 'Resumo Geral'}
+        </h1>
+        
+        {/* Seletor de Perfil para Admin */}
+        {profileId === 'admin' && (
+          <div className="profile-selector">
+            <select 
+              value={selectedProfile}
+              onChange={(e) => setSelectedProfile(e.target.value)}
+              className="profile-select"
+            >
+              {profiles.map(profile => (
+                <option key={profile} value={profile}>
+                  {profile === 'all' ? 'Todos os Perfis' : `Perfil ${profile}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <button
           className="reset-button"
           onClick={handleResetAll}
@@ -211,6 +349,13 @@ function DashboardSummary() {
         </button>
       </div>
       
+      {/* Mostrar título do dashboard atual */}
+      {profileId === 'admin' && selectedProfile !== 'all' && (
+        <div className="selected-profile-header">
+          <h2>Dashboard do Perfil {selectedProfile}</h2>
+        </div>
+      )}
+
       <div className="dashboard-grid">
         {summaryData.map(page => (
           <div 
@@ -224,62 +369,102 @@ function DashboardSummary() {
             title={`Ir para ${page.title}`}
           >
             <div className="card-header">
-              <h2 className="card-title">{page.icon} {page.title}</h2>
-              <div className="card-progress">
-                <div className="progress-ring">
-                  <div className="progress-circle" style={{ 
-                    background: `conic-gradient(var(--color-primary) ${page.progress * 3.6}deg, var(--color-background) 0deg)`
-                  }}>
-                    <span>{page.progress}%</span>
-                  </div>
-                </div>
+              <span className="card-icon">{page.icon}</span>
+              <h2 className="card-title">{page.title}</h2>
+            </div>
+            
+            <div className="card-stats">
+              <div className="stat-item" title="Funcionando">
+                ✅ {page.working}
               </div>
+              <div className="stat-item" title="Com Problemas">
+                ❌ {page.broken}
+              </div>
+              <div className="stat-item" title="Pendentes">
+                ⏳ {page.pending}
+              </div>
+              {page.withNotes > 0 && (
+                <div className="stat-item" title="Com Comentários">
+                  💬 {page.withNotes}
+                </div>
+              )}
             </div>
 
-            <div className="card-stats">
-              <div className="stat-item working">
-                <span className="stat-label">Funcionando</span>
-                <span className="stat-value">{page.working}</span>
-              </div>
-              <div className="stat-item broken">
-                <span className="stat-label">Problemas</span>
-                <span className="stat-value">{page.broken}</span>
-              </div>
-              <div className="stat-item pending">
-                <span className="stat-label">Pendentes</span>
-                <span className="stat-value">{page.pending}</span>
-              </div>
-              <div className="stat-item notes">
-                <span className="stat-label">Comentários</span>
-                <span className="stat-value">{page.withNotes}</span>
-              </div>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill"
+                style={{ width: `${page.progress}%` }}
+              />
             </div>
+            
+            <div className="progress-info">
+              {profileId === 'admin' && selectedProfile === 'all' ? (
+                <div className="progress-total">Média Geral: {page.progress}%</div>
+              ) : (
+                <div className="progress-total">Total Concluído: {page.progress}%</div>
+              )}
+            </div>
+
+            {profileId === 'admin' && page.tasks && (
+              <div className="admin-details">
+                {page.tasks.filter(t => t.profileStatuses?.length > 0).map(task => (
+                  <div key={task.id} className="admin-task-item">
+                    <div className="task-name">{task.text || task.name}</div>
+                    <div className="task-profiles">
+                      {task.profileStatuses.map(ps => (
+                        <div key={ps.profileId} className="profile-status">
+                          <span className="task-status">
+                            {ps.status === 'working' ? '✅' : ps.status === 'broken' ? '❌' : '⏳'}
+                          </span>
+                          <span className="task-profile">
+                            {ps.profileId}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {page.profileAverages && (
+                  <div className="profile-averages">
+                    <h3>Média por Perfil:</h3>
+                    <div className="averages-grid">
+                      {Object.entries(page.profileAverages).map(([profile, percent]) => (
+                        <div key={profile} className="profile-average">
+                          <span className="profile-id"> {profile}:</span>
+                          <span className="average-percent">{percent}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
 
+      {/* Menu de Contexto */}
       {activeMenu && (
-        <>
-          <div className={`popup-overlay ${activeMenu ? 'active' : ''}`} onClick={closeMenu} />
-          <div 
-            className={`popup-menu ${activeMenu ? 'active' : ''}`}
-            style={{
-              left: `${Math.min(menuPosition.x, window.innerWidth - 220)}px`,
-              top: `${Math.min(menuPosition.y, window.innerHeight - 200)}px`
-            }}
-          >
-            <div className="popup-menu-item" onClick={() => handleCardClick(activeMenu.title)}>
-              <i>📋</i> Abrir página
-            </div>
-            <div className="popup-menu-item" onClick={() => handleCopyStats(activeMenu)}>
-              <i>📊</i> Copiar estatísticas
-            </div>
-            <div className="popup-menu-divider" />
-            <div className="popup-menu-item danger" onClick={() => handleResetPage(activeMenu)}>
-              <i>🔄</i> Resetar página
-            </div>
+        <div 
+          className="popup-menu"
+          style={{
+            position: 'fixed',
+            left: menuPosition.x,
+            top: menuPosition.y,
+          }}
+        >
+          <div className="popup-menu-item" onClick={() => handleCardClick(activeMenu)}>
+            <i>📝</i> Abrir Página
           </div>
-        </>
+          <div className="popup-menu-item" onClick={() => handleCopyStats(activeMenu)}>
+            <i>📋</i> Copiar Estatísticas
+          </div>
+          {profileId !== 'admin' && (
+            <div className="popup-menu-item" onClick={() => handleResetPage(activeMenu)}>
+              <i>🔄</i> Resetar Página
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
